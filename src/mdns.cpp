@@ -17,11 +17,38 @@
 #include <netinet/in.h>
 #endif
 #include <string.h>
+#include <optional>
 
 namespace mdns_cpp {
 
 static mdns_record_txt_t txtbuffer[128];
-static std::vector <Query_result> globalQueryResult;
+static std::vector<Query_result> globalQueryResult;
+
+void HandleQuerySRV(std::string service_nam, std::string canonical_hostname, uint16_t port) {
+  for (size_t i = 0; i < globalQueryResult.size(); i++) {
+    if (globalQueryResult[i].canonical_hostname == canonical_hostname) {
+      return; // Already exists
+    }
+  }
+  
+  Query_result qr(service_nam, canonical_hostname);
+  qr.port = port;
+  
+  globalQueryResult.push_back(qr);
+}
+
+void SetQueryResultIP(std::string canonical_hostname, std::string ip, bool isIPv6) {  
+    for (size_t i = 0; i < globalQueryResult.size(); i++) {
+      if (globalQueryResult[i].canonical_hostname == canonical_hostname) {
+        if (isIPv6) {
+          globalQueryResult[i].ipV6_adress = ip;
+        } else {
+          globalQueryResult[i].ipV4_adress = ip;
+        }    
+        break;
+      }      
+    }
+} 
 
 int mDNS::openServiceSockets(int *sockets, int max_sockets) {
   // When receiving, each socket can receive data from all network interfaces
@@ -247,17 +274,6 @@ int mDNS::openClientSockets(int *sockets, int max_sockets, int port) {
   return num_sockets;
 }
 
-void AddToGlobalResult(const char *name, bool isIPv6, const std::string& ip) {
-  Query_result qr(name);
-
-  if (isIPv6) {
-    qr.ipV6_adress = ip;
-  } else {
-    qr.ipV4_adress = ip;
-  }
-
-  globalQueryResult.push_back(qr);
-}
 
 static int query_callback(int sock, const struct sockaddr *from, size_t addrlen, mdns_entry_type_t entry,
                           uint16_t query_id, uint16_t rtype, uint16_t rclass, uint32_t ttl, const void *data,
@@ -284,9 +300,7 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
 
   if (rtype == MDNS_RECORDTYPE_PTR) {
     mdns_string_t namestr =
-        mdns_record_parse_ptr(data, size, record_offset, record_length, namebuffer, sizeof(namebuffer)); // 0x00007ff77f53ed00 "pat99._mvrxchange._tcp.local."
-    
-    AddToGlobalResult(namebuffer, isIPv6, fromaddrstr);
+        mdns_record_parse_ptr(data, size, record_offset, record_length, namebuffer, sizeof(namebuffer));
 
     snprintf(str_buffer, str_capacity, "%s : %s %.*s PTR %.*s rclass 0x%x ttl %u length %d\n", fromaddrstr.data(),
              entrytype, MDNS_STRING_FORMAT(entrystr), MDNS_STRING_FORMAT(namestr), rclass, ttl, (int)record_length);
@@ -295,18 +309,26 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
         mdns_record_parse_srv(data, size, record_offset, record_length, namebuffer, sizeof(namebuffer));
     snprintf(str_buffer, str_capacity, "%s : %s %.*s SRV %.*s priority %d weight %d port %d\n", fromaddrstr.data(),
              entrytype, MDNS_STRING_FORMAT(entrystr), MDNS_STRING_FORMAT(srv.name), srv.priority, srv.weight, srv.port);
+    
+    HandleQuerySRV(entrystr.str, srv.name.str, srv.port);
+
   } else if (rtype == MDNS_RECORDTYPE_A) {
     struct sockaddr_in addr;
     mdns_record_parse_a(data, size, record_offset, record_length, &addr);
     const auto addrstr = ipv4AddressToString(namebuffer, sizeof(namebuffer), &addr, sizeof(addr));
     snprintf(str_buffer, str_capacity, "%s : %s %.*s A %s\n", fromaddrstr.data(), entrytype,
              MDNS_STRING_FORMAT(entrystr), addrstr.data());
+    
+    SetQueryResultIP(entrystr.str, addrstr, false);
+
   } else if (rtype == MDNS_RECORDTYPE_AAAA) {
     struct sockaddr_in6 addr;
     mdns_record_parse_aaaa(data, size, record_offset, record_length, &addr);
     const auto addrstr = ipv6AddressToString(namebuffer, sizeof(namebuffer), &addr, sizeof(addr));
     snprintf(str_buffer, str_capacity, "%s : %s %.*s AAAA %s\n", fromaddrstr.data(), entrytype,
              MDNS_STRING_FORMAT(entrystr), addrstr.data());
+    
+    SetQueryResultIP(entrystr.str, addrstr, true);
   } else if (rtype == MDNS_RECORDTYPE_TXT) {
     size_t parsed = mdns_record_parse_txt(data, size, record_offset, record_length, txtbuffer,
                                           sizeof(txtbuffer) / sizeof(mdns_record_txt_t));

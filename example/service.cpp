@@ -39,6 +39,7 @@ int main() {
   mdns_cpp::mDNS mdns;
 
   mdns.setServiceHostname("AirForce1");
+  mdns.setServiceName("_mvrxchange._tcp.local.");
 
   mdns.startService();
 

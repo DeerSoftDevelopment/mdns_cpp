@@ -3,26 +3,25 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include "mdns_cpp/defs.hpp"
-#include "../src/mdns.h" // XXX test
 
 struct sockaddr;
 
 namespace mdns_cpp {
 
 struct Query_result {
-  Query_result(std::string hostNam) { 	  
-	  this->hostNam = hostNam;
-  }
+  Query_result(std::string service_nam, std::string canonical_hostname) {	  
+	  this->hostNam = service_nam;
+      this->canonical_hostname = canonical_hostname;
+  } 
   
-  std::string hostNam;
-  std::string ipV4_adress;
-  std::string ipV6_adress;
-
-  // AAAA
-  // A
-  // SRV
+  std::string   hostNam;
+  std::string   canonical_hostname;
+  uint16_t		port;
+  std::string   ipV4_adress;
+  std::string   ipV6_adress;  
 };
 
 class mDNS { 

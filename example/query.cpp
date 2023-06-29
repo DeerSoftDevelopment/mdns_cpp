@@ -37,9 +37,9 @@ int main() {
   });
 
   mdns_cpp::mDNS mdns;
-  const std::string service = "_http._tcp.local.";
+  const std::string service = "_mvrxchange._tcp.local.";
 
-  mdns.executeQuery(service);
+  auto res = mdns.executeQuery2(service);
 
   while (true) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
